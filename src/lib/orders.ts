@@ -1,118 +1,122 @@
+import { BASE_PATH } from "./assets";
 import type { StoredCartLine } from "./cart";
 import type { CheckoutValues } from "./validation";
 import { normalizePhone } from "./validation";
 
 /**
  * Payload sent to POST /api/orders. Only product ids and quantities are sent:
- * prices and totals must be recomputed server-side (PART 2).
+ * the server recomputes every price and the total from its own catalog.
  */
 export interface OrderRequest {
-  customer: { fullName: string; phone: string };
-  notes?: string;
+  customerName: string;
+  customerPhone: string;
+  customerNotes: string;
   items: StoredCartLine[];
 }
 
-export interface OrderResponse {
+export interface ConfirmedOrder {
   reference: string;
   total: number;
   currency: "TND";
+  createdAt: string;
 }
 
-export interface ConfirmedOrder extends OrderResponse {
-  createdAt: string;
-  /** True when the order was only simulated in the browser (no backend). */
-  simulated: boolean;
+export interface OrderFailure {
+  code: string;
+  message: string | null;
+  orderRef: string | null;
 }
 
 export const LAST_ORDER_STORAGE_KEY = "vappino.lastOrder.v1";
+export const LAST_ORDER_ERROR_STORAGE_KEY = "vappino.lastOrderError.v1";
 
-const API_URL = process.env.NEXT_PUBLIC_ORDERS_API_URL ?? "";
+const API_URL = process.env.NEXT_PUBLIC_ORDERS_API_URL || `${BASE_PATH}/api/orders`;
 
-export class OrderSubmissionError extends Error {}
+export class OrderSubmissionError extends Error {
+  constructor(readonly failure: OrderFailure) {
+    super(failure.code);
+  }
+}
 
 export function buildOrderRequest(values: CheckoutValues, items: StoredCartLine[]): OrderRequest {
-  const notes = values.notes.trim();
   return {
-    customer: { fullName: values.fullName.trim(), phone: normalizePhone(values.phone) },
-    ...(notes ? { notes } : {}),
+    customerName: values.fullName.trim(),
+    customerPhone: normalizePhone(values.phone),
+    customerNotes: values.notes.trim(),
     items: items.map(({ productId, quantity }) => ({ productId, quantity })),
   };
 }
 
-/** Format: VAP-YYYYMMDD-XXXX */
-export function generateOrderReference(date = new Date()): string {
-  const ymd = [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("");
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = new Uint8Array(4);
-  crypto.getRandomValues(bytes);
-  const suffix = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
-  return `VAP-${ymd}-${suffix}`;
+export function createIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/**
- * Submits the order. When NEXT_PUBLIC_ORDERS_API_URL is set (e.g. "/api/orders"),
- * the request is POSTed to the backend. Otherwise the order is simulated locally
- * so the frontend flow can be exercised before PART 2 ships.
- */
-export async function submitOrder(
-  request: OrderRequest,
-  estimatedTotal: number,
-): Promise<ConfirmedOrder> {
-  const createdAt = new Date().toISOString();
-
-  if (!API_URL) {
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    return {
-      reference: generateOrderReference(),
-      total: estimatedTotal,
-      currency: "TND",
-      createdAt,
-      simulated: true,
-    };
-  }
-
+/** POSTs the order and resolves only when the backend confirms it was processed. */
+export async function submitOrder(request: OrderRequest, idempotencyKey: string): Promise<ConfirmedOrder> {
   let response: Response;
   try {
     response = await fetch(API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(request),
     });
   } catch {
-    throw new OrderSubmissionError("network");
+    throw new OrderSubmissionError({ code: "network", message: null, orderRef: null });
   }
-  if (!response.ok) throw new OrderSubmissionError(`http_${response.status}`);
 
-  const data = (await response.json()) as Partial<OrderResponse>;
-  if (typeof data.reference !== "string" || typeof data.total !== "number") {
-    throw new OrderSubmissionError("invalid_response");
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = (await response.json()) as Record<string, unknown>;
+  } catch {
+    /* non-JSON response */
   }
-  return {
-    reference: data.reference,
-    total: data.total,
-    currency: "TND",
-    createdAt,
-    simulated: false,
-  };
+
+  if (response.ok && data?.success === true && typeof data.orderRef === "string" && typeof data.total === "number") {
+    return { reference: data.orderRef, total: data.total, currency: "TND", createdAt: new Date().toISOString() };
+  }
+  throw new OrderSubmissionError({
+    code: typeof data?.error === "string" ? data.error : `http_${response.status}`,
+    message: typeof data?.message === "string" ? data.message : null,
+    orderRef: typeof data?.orderRef === "string" ? data.orderRef : null,
+  });
 }
 
-export function saveLastOrder(order: ConfirmedOrder): void {
+function writeSession(key: string, value: unknown): void {
   try {
-    sessionStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify(order));
+    if (value === null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* storage unavailable */
   }
 }
 
-export function readLastOrder(): ConfirmedOrder | null {
+function readSession<T>(key: string): T | null {
   try {
-    const raw = sessionStorage.getItem(LAST_ORDER_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as ConfirmedOrder) : null;
+    const raw = sessionStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
   }
+}
+
+export function saveLastOrder(order: ConfirmedOrder): void {
+  writeSession(LAST_ORDER_STORAGE_KEY, order);
+}
+
+export function readLastOrder(): ConfirmedOrder | null {
+  return readSession<ConfirmedOrder>(LAST_ORDER_STORAGE_KEY);
+}
+
+export function saveLastOrderError(failure: OrderFailure): void {
+  writeSession(LAST_ORDER_ERROR_STORAGE_KEY, failure);
+}
+
+export function clearLastOrderError(): void {
+  writeSession(LAST_ORDER_ERROR_STORAGE_KEY, null);
+}
+
+export function readLastOrderError(): OrderFailure | null {
+  return readSession<OrderFailure>(LAST_ORDER_ERROR_STORAGE_KEY);
 }

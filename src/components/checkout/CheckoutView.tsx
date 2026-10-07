@@ -8,7 +8,16 @@ import { EmptyCart } from "@/components/cart/EmptyCart";
 import { OrderSummary } from "@/components/cart/OrderSummary";
 import { Logo } from "@/components/layout/Logo";
 import { AlertIcon, ArrowLeftIcon } from "@/components/ui/Icons";
-import { buildOrderRequest, saveLastOrder, submitOrder } from "@/lib/orders";
+import {
+  OrderSubmissionError,
+  buildOrderRequest,
+  clearLastOrderError,
+  createIdempotencyKey,
+  saveLastOrder,
+  saveLastOrderError,
+  submitOrder,
+  type OrderRequest,
+} from "@/lib/orders";
 import {
   NAME_MAX_LENGTH,
   NOTES_MAX_LENGTH,
@@ -19,8 +28,27 @@ import {
 import styles from "./CheckoutView.module.css";
 
 const DRAFT_KEY = "vappino.checkoutDraft.v1";
+const ATTEMPT_KEY = "vappino.checkoutAttempt.v1";
 const FIELD_ORDER: (keyof CheckoutValues)[] = ["fullName", "phone", "notes"];
 const EMPTY: CheckoutValues = { fullName: "", phone: "", notes: "" };
+
+/** Reuses the same idempotency key when the exact same order is resubmitted (double click, retry after error). */
+function attemptKey(request: OrderRequest): string {
+  const signature = JSON.stringify(request);
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(ATTEMPT_KEY) ?? "null") as { key?: string; signature?: string } | null;
+    if (saved?.key && saved.signature === signature) return saved.key;
+  } catch {
+    /* ignore */
+  }
+  const key = createIdempotencyKey();
+  try {
+    sessionStorage.setItem(ATTEMPT_KEY, JSON.stringify({ key, signature }));
+  } catch {
+    /* ignore */
+  }
+  return key;
+}
 
 export function CheckoutView() {
   const router = useRouter();
@@ -30,6 +58,7 @@ export function CheckoutView() {
   const [submitted, setSubmitted] = useState(false);
   const [status, setStatus] = useState<"idle" | "submitting" | "redirecting">("idle");
   const formRef = useRef<HTMLFormElement>(null);
+  const inFlight = useRef(false);
 
   // Restore a draft (e.g. when returning from /order-error).
   useEffect(() => {
@@ -49,7 +78,7 @@ export function CheckoutView() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (status !== "idle") return;
+    if (status !== "idle" || inFlight.current) return;
     setSubmitted(true);
     const found = validateCheckout(values);
     setErrors(found);
@@ -59,6 +88,7 @@ export function CheckoutView() {
       return;
     }
 
+    inFlight.current = true;
     setStatus("submitting");
     try {
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(values));
@@ -66,18 +96,25 @@ export function CheckoutView() {
       /* ignore */
     }
 
+    const request = buildOrderRequest(values, items);
     try {
-      const order = await submitOrder(buildOrderRequest(values, items), subtotal);
+      const order = await submitOrder(request, attemptKey(request));
       saveLastOrder(order);
+      clearLastOrderError();
       try {
         sessionStorage.removeItem(DRAFT_KEY);
+        sessionStorage.removeItem(ATTEMPT_KEY);
       } catch {
         /* ignore */
       }
       setStatus("redirecting");
       clearCart();
       router.push("/order-success");
-    } catch {
+    } catch (error) {
+      saveLastOrderError(
+        error instanceof OrderSubmissionError ? error.failure : { code: "unknown", message: null, orderRef: null },
+      );
+      inFlight.current = false;
       setStatus("redirecting");
       router.push("/order-error");
     }
