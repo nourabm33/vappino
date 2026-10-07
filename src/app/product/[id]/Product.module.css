@@ -1,0 +1,127 @@
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: var(--space-5) 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+}
+
+.crumbs li + li::before {
+  content: "/";
+  margin-right: var(--space-2);
+}
+
+.crumbs a {
+  color: var(--color-text-muted);
+}
+
+.crumbs a:hover {
+  color: var(--color-text);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.media {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.category {
+  color: var(--color-accent);
+}
+
+.name {
+  font-size: var(--text-3xl);
+  overflow-wrap: anywhere;
+}
+
+.specRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.price {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.priceUnit {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin-left: var(--space-2);
+}
+
+.details {
+  margin: 0;
+  display: grid;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.detailRow {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.detailRow + .detailRow {
+  border-top: 1px solid var(--color-border);
+}
+
+.detailRow dt {
+  color: var(--color-text-muted);
+}
+
+.detailRow dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.description {
+  color: var(--color-text-muted);
+}
+
+.related {
+  padding-top: var(--space-8);
+}
+
+.relatedTitle {
+  font-size: var(--text-2xl);
+  margin-bottom: var(--space-5);
+}
+
+@media (min-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-7);
+  }
+
+  .media {
+    position: sticky;
+    top: calc(var(--header-height) + var(--space-5));
+  }
+}
