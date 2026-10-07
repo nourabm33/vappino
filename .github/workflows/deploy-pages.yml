@@ -24,10 +24,15 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run build
+      # GitHub Pages is static hosting: API routes are excluded and orders are
+      # sent to the server-hosted API (repository variable ORDERS_API_URL).
+      - name: Build static frontend
+        run: rm -rf src/app/api && npm run build
         env:
+          STATIC_EXPORT: "1"
           NEXT_PUBLIC_BASE_PATH: /vappino
           NEXT_PUBLIC_SITE_URL: https://nourabm33.github.io/vappino
+          NEXT_PUBLIC_ORDERS_API_URL: ${{ vars.ORDERS_API_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out
