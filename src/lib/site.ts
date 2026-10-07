@@ -1,3 +1,5 @@
+import { asset } from "./assets";
+
 export const SITE = {
   name: "VAPPINO",
   tagline: "Vape Gros & Détail",
@@ -5,8 +7,8 @@ export const SITE = {
     "VAPPINO — Vape gros & détail. Puffs, kits, capsules et e-liquides. Commandez en ligne en quelques clics.",
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   logo: {
-    src: "/brand/vappino-logo.webp",
-    srcSmall: "/brand/vappino-logo-sm.webp",
+    src: asset("/brand/vappino-logo.webp"),
+    srcSmall: asset("/brand/vappino-logo-sm.webp"),
     width: 640,
     height: 493,
     alt: "VAPPINO — Vape Gros & Détail",

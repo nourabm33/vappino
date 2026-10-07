@@ -1,4 +1,5 @@
 import type { CategoryId } from "./categories";
+import { asset } from "@/lib/assets";
 
 export type Currency = "TND";
 
@@ -19,7 +20,7 @@ export interface Product {
   popular?: boolean;
 }
 
-const IMG = "/images/products";
+const IMG = asset("/images/products");
 
 export const PRODUCTS: readonly Product[] = [
   {
