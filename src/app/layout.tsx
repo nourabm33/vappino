@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     siteName: SITE.name,
     title: `${SITE.name} — ${SITE.tagline}`,
     description: SITE.description,
-    images: [{ url: SITE.logo.src, width: SITE.logo.width, height: SITE.logo.height, alt: SITE.logo.alt }],
+    images: [{ url: "/brand/vappino-logo.webp", width: SITE.logo.width, height: SITE.logo.height, alt: SITE.logo.alt }],
   },
 };
 
