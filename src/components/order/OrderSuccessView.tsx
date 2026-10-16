@@ -7,13 +7,30 @@ import { Logo } from "@/components/layout/Logo";
 import { CheckIcon } from "@/components/ui/Icons";
 import { StatusCard } from "@/components/ui/StatusCard";
 import { formatPrice } from "@/lib/format";
-import { readLastOrder, type ConfirmedOrder } from "@/lib/orders";
+import { readLastOrder, type PlacedOrder } from "@/lib/orders";
 import styles from "./OrderSuccessView.module.css";
 
-export function OrderSuccessView() {
-  const [order, setOrder] = useState<ConfirmedOrder | null | undefined>(undefined);
+/** Remembers which order already auto-opened WhatsApp, so coming back to this page doesn't reopen it. */
+const OPENED_KEY = "vappino.whatsappOpened.v1";
 
-  useEffect(() => setOrder(readLastOrder()), []);
+function openWhatsAppOnce(order: PlacedOrder): void {
+  try {
+    if (sessionStorage.getItem(OPENED_KEY) === order.createdAt) return;
+    sessionStorage.setItem(OPENED_KEY, order.createdAt);
+  } catch {
+    return;
+  }
+  window.location.assign(order.whatsappUrl);
+}
+
+export function OrderSuccessView() {
+  const [order, setOrder] = useState<PlacedOrder | null | undefined>(undefined);
+
+  useEffect(() => {
+    const last = readLastOrder();
+    setOrder(last);
+    if (last) openWhatsAppOnce(last);
+  }, []);
 
   if (order === undefined) return null;
   if (order === null) return <EmptyCart title="Aucune commande récente" />;
@@ -28,24 +45,26 @@ export function OrderSuccessView() {
       tone="success"
       logo={<Logo height={72} />}
       icon={<CheckIcon size={30} />}
-      title="Commande reçue !"
-      description="Votre commande a bien été enregistrée. Nous vous contacterons par téléphone pour la confirmer."
+      title="Votre commande est prête !"
+      description="WhatsApp s'ouvre avec votre commande pré-remplie. Appuyez sur Envoyer dans WhatsApp pour nous la transmettre."
       actions={
         <>
-          <Link href="/shop" className="btn btn-primary">
+          <a href={order.whatsappUrl} className="btn btn-primary" rel="noopener noreferrer">
+            Ouvrir WhatsApp
+          </a>
+          <Link href="/shop" className="btn btn-secondary">
             Continuer mes achats
-          </Link>
-          <Link href="/" className="btn btn-secondary">
-            Retour à l&apos;accueil
           </Link>
         </>
       }
     >
       <dl className={styles.details}>
-        <div className={styles.row}>
-          <dt>Référence</dt>
-          <dd className={styles.reference}>{order.reference}</dd>
-        </div>
+        {order.reference ? (
+          <div className={styles.row}>
+            <dt>Référence</dt>
+            <dd className={styles.reference}>{order.reference}</dd>
+          </div>
+        ) : null}
         <div className={styles.row}>
           <dt>Total</dt>
           <dd>{formatPrice(order.total, order.currency)}</dd>
@@ -55,7 +74,10 @@ export function OrderSuccessView() {
           <dd>{date}</dd>
         </div>
       </dl>
-      <p className={styles.note}>Conservez votre référence de commande pour tout échange avec nous.</p>
+      <p className={styles.note}>
+        WhatsApp ne s&apos;est pas ouvert ? Appuyez sur « Ouvrir WhatsApp ». Votre commande n&apos;est transmise
+        qu&apos;une fois le message envoyé.
+      </p>
     </StatusCard>
   );
 }

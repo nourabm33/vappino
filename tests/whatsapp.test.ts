@@ -83,6 +83,7 @@ describe("owner notification message", () => {
     orderRef: "VAP-20261007-AB12",
     customerName: "Ahmed Ben Ali",
     customerPhone: "+21620123456",
+    customerAddress: "12 rue de Marseille, Tunis",
     customerNotes: "Livraison\nle soir",
     items: [
       { productId: "mazaya-80k", productName: "Mazaya 80K", specification: "80K", quantity: 1, unitPrice: 65, subtotal: 65 },

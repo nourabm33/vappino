@@ -32,7 +32,7 @@ function invalidQuantity(productId: string): ApiError {
  */
 export function parseOrderRequest(body: unknown): ValidOrderInput {
   if (!isRecord(body)) throw new ApiError(400, "invalid_body", "Requête invalide.");
-  const { customerName, customerPhone, customerNotes, items } = body;
+  const { customerName, customerPhone, customerAddress, customerNotes, items } = body;
 
   if (typeof customerName !== "string" || !customerName.trim()) {
     throw new ApiError(400, "invalid_customer_name", "Veuillez indiquer votre nom complet.", { field: "customerName" });
@@ -47,9 +47,12 @@ export function parseOrderRequest(body: unknown): ValidOrderInput {
     .replace(/\p{Cc}/gu, (c) => (c === "\n" ? c : ""))
     .trim();
 
-  const errors = validateCheckout({ fullName: customerName, phone: customerPhone, notes });
+  const address = (typeof customerAddress === "string" ? customerAddress : "").replace(/\p{Cc}/gu, " ").trim().replace(/\s+/g, " ");
+
+  const errors = validateCheckout({ fullName: customerName, phone: customerPhone, address, notes });
   if (errors.fullName) throw new ApiError(400, "invalid_customer_name", errors.fullName, { field: "customerName" });
   if (errors.phone) throw new ApiError(400, "invalid_phone", errors.phone, { field: "customerPhone" });
+  if (errors.address) throw new ApiError(400, "invalid_address", errors.address, { field: "customerAddress" });
   if (errors.notes) throw new ApiError(400, "invalid_notes", errors.notes, { field: "customerNotes" });
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -72,6 +75,7 @@ export function parseOrderRequest(body: unknown): ValidOrderInput {
   return {
     customerName: customerName.trim().replace(/\s+/g, " "),
     customerPhone: toE164(customerPhone),
+    customerAddress: address,
     customerNotes: notes,
     items: parsed,
   };

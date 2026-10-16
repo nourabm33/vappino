@@ -80,6 +80,20 @@ Products live in `src/data/products.ts`. Each product has `id`, `name`, `specifi
 
 Colors are taken from the logo (mint → cyan → violet → magenta on deep navy) and exposed as CSS variables (`--brand-*`, `--color-*`, `--gradient-brand`).
 
+## Ordering via WhatsApp (click-to-chat)
+
+Checkout no longer relies on the WhatsApp Cloud API or any access token. When the customer clicks **Envoyer la commande**:
+
+1. The form is validated (name, phone, delivery address, optional notes).
+2. The order is recorded through `POST /api/orders` (MongoDB, server-side prices, `status: "received"`, `whatsappStatus: "click_to_chat"`). If the API is slow (6 s timeout) or down, checkout continues without a reference: WhatsApp is the order channel.
+3. `/order-success` opens `https://wa.me/<NEXT_PUBLIC_ORDER_WHATSAPP_NUMBER>?text=<encodeURIComponent(message)>` once. The message lists the reference, each product (quantity × unit price = line total), the total and the delivery details. The customer just presses **Envoyer** in WhatsApp. An **Ouvrir WhatsApp** button reopens it.
+
+On phones `wa.me` opens the WhatsApp app; on desktop it opens WhatsApp Desktop or WhatsApp Web. The receiving number must be active in the WhatsApp / WhatsApp Business app (not registered on the Cloud API), otherwise nobody sees the messages.
+
+Message builder: `src/lib/whatsapp.ts` (tests in `tests/click-to-chat.test.ts`).
+
+The previous automatic owner notification is still in the code but disabled; set `WHATSAPP_CLOUD_API_ENABLED=true` to turn it back on.
+
 ## Architecture (Part 2)
 
 ```
@@ -160,6 +174,8 @@ See `.env.example`. Server-side variables must **never** be prefixed with `NEXT_
 | --- | --- | --- |
 | `MONGODB_URI` | server | MongoDB connection string (required) |
 | `MONGODB_DB` | server | Database name (default `vappino`) |
+| `NEXT_PUBLIC_ORDER_WHATSAPP_NUMBER` | client | WhatsApp number customers send orders to (default `21651144339`) |
+| `WHATSAPP_CLOUD_API_ENABLED` | server | `true` re-enables the Cloud API owner notification (off by default) |
 | `WHATSAPP_ACCESS_TOKEN` | server | Meta access token (required, secret) |
 | `WHATSAPP_PHONE_NUMBER_ID` | server | Sender phone number id (`1356616710875243`) |
 | `OWNER_WHATSAPP_NUMBER` | server | Recipient, international digits (`21651144339`) |

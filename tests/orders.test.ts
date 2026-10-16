@@ -16,7 +16,7 @@ let ipCounter = 0;
 const price = (id: string) => getProductById(id)!.price;
 const orders = () => client.db(DB).collection("orders");
 
-const customer = { customerName: "Ahmed Ben Ali", customerPhone: "20 123 456", customerNotes: "Merci" };
+const customer = { customerName: "Ahmed Ben Ali", customerPhone: "20 123 456", customerAddress: "12 rue de Marseille, Tunis", customerNotes: "Merci" };
 
 function post(body: unknown, opts: { key?: string; ip?: string } = {}) {
   ipCounter++;
@@ -289,6 +289,43 @@ describe("POST /api/orders", () => {
       }),
     );
     expect(res.status).toBe(403);
+    expect(await orders().countDocuments()).toBe(0);
+  });
+});
+
+describe("click-to-chat mode (WHATSAPP_CLOUD_API_ENABLED unset)", () => {
+  beforeEach(() => {
+    delete process.env.WHATSAPP_CLOUD_API_ENABLED;
+  });
+  afterAll(() => {
+    process.env.WHATSAPP_CLOUD_API_ENABLED = "true";
+  });
+
+  it("stores the order as received without calling Meta", async () => {
+    const res = await post({ ...customer, items: [{ productId: "mazaya-80k", quantity: 2 }] }, { key: "key-click-to-chat-01" });
+    const body = await res.json();
+    expect(res.status).toBe(201);
+    expect(body).toMatchObject({ success: true, status: "received", total: 130, currency: "TND" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await orders().findOne({ orderRef: body.orderRef })).toMatchObject({
+      customerAddress: "12 rue de Marseille, Tunis",
+      status: "received",
+      whatsappStatus: "click_to_chat",
+      whatsappAttempts: 0,
+    });
+
+    const retry = await post({ ...customer, items: [{ productId: "mazaya-80k", quantity: 2 }] }, { key: "key-click-to-chat-01" });
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({ success: true, orderRef: body.orderRef, status: "received", duplicate: true });
+    expect(await orders().countDocuments()).toBe(1);
+  });
+
+  it("rejects an order without a delivery address", async () => {
+    const { customerAddress: _omit, ...noAddress } = customer;
+    void _omit;
+    const res = await post({ ...noAddress, items: [{ productId: "mazaya-80k", quantity: 1 }] });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ success: false, error: "invalid_address" });
     expect(await orders().countDocuments()).toBe(0);
   });
 });

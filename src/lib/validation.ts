@@ -1,6 +1,7 @@
 export interface CheckoutValues {
   fullName: string;
   phone: string;
+  address: string;
   notes: string;
 }
 
@@ -8,6 +9,8 @@ export type CheckoutErrors = Partial<Record<keyof CheckoutValues, string>>;
 
 export const NAME_MIN_LENGTH = 3;
 export const NAME_MAX_LENGTH = 80;
+export const ADDRESS_MIN_LENGTH = 5;
+export const ADDRESS_MAX_LENGTH = 200;
 export const NOTES_MAX_LENGTH = 500;
 
 /** Strips spaces, dots, dashes and parentheses used for readability. */
@@ -43,6 +46,15 @@ export function validateCheckout(values: CheckoutValues): CheckoutErrors {
     errors.phone = "Veuillez indiquer votre numéro de téléphone.";
   } else if (!isValidPhone(values.phone)) {
     errors.phone = "Numéro invalide. Exemple : 20 123 456 ou +216 20 123 456.";
+  }
+
+  const address = values.address.trim();
+  if (!address) {
+    errors.address = "Veuillez indiquer votre adresse de livraison.";
+  } else if (address.length < ADDRESS_MIN_LENGTH) {
+    errors.address = "Adresse trop courte : indiquez au moins la rue et la ville.";
+  } else if (address.length > ADDRESS_MAX_LENGTH) {
+    errors.address = `L'adresse ne peut pas dépasser ${ADDRESS_MAX_LENGTH} caractères.`;
   }
 
   if (values.notes.length > NOTES_MAX_LENGTH) {

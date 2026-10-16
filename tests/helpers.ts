@@ -24,6 +24,7 @@ export function stubMetaFetch() {
 }
 
 export const WA_ENV = {
+  WHATSAPP_CLOUD_API_ENABLED: "true",
   WHATSAPP_ACCESS_TOKEN: "test-access-token-SECRET",
   WHATSAPP_PHONE_NUMBER_ID: "1356616710875243",
   OWNER_WHATSAPP_NUMBER: "21651144339",

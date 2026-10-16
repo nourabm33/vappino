@@ -10,7 +10,7 @@ export default function CheckoutPage() {
       <PageHeader
         eyebrow="Commande"
         title="Finaliser la commande"
-        description="Indiquez votre nom et votre numéro de téléphone pour envoyer votre commande."
+        description="Indiquez vos coordonnées et votre adresse, puis envoyez votre commande sur WhatsApp."
       />
       <CheckoutView />
     </div>
