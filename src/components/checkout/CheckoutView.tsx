@@ -14,11 +14,12 @@ import {
   clearLastOrderError,
   createIdempotencyKey,
   saveLastOrder,
-  saveLastOrderError,
   submitOrder,
   type OrderRequest,
 } from "@/lib/orders";
+import { buildWhatsAppOrderUrl } from "@/lib/whatsapp";
 import {
+  ADDRESS_MAX_LENGTH,
   NAME_MAX_LENGTH,
   NOTES_MAX_LENGTH,
   validateCheckout,
@@ -29,8 +30,8 @@ import styles from "./CheckoutView.module.css";
 
 const DRAFT_KEY = "vappino.checkoutDraft.v1";
 const ATTEMPT_KEY = "vappino.checkoutAttempt.v1";
-const FIELD_ORDER: (keyof CheckoutValues)[] = ["fullName", "phone", "notes"];
-const EMPTY: CheckoutValues = { fullName: "", phone: "", notes: "" };
+const FIELD_ORDER: (keyof CheckoutValues)[] = ["fullName", "phone", "address", "notes"];
+const EMPTY: CheckoutValues = { fullName: "", phone: "", address: "", notes: "" };
 
 /** Reuses the same idempotency key when the exact same order is resubmitted (double click, retry after error). */
 function attemptKey(request: OrderRequest): string {
@@ -97,27 +98,35 @@ export function CheckoutView() {
     }
 
     const request = buildOrderRequest(values, items);
+    // The order reaches the shop through the customer's WhatsApp message, so a backend
+    // failure only costs the reference: it never blocks the WhatsApp step.
+    let reference: string | null = null;
     try {
-      const order = await submitOrder(request, attemptKey(request));
-      saveLastOrder(order);
-      clearLastOrderError();
-      try {
-        sessionStorage.removeItem(DRAFT_KEY);
-        sessionStorage.removeItem(ATTEMPT_KEY);
-      } catch {
-        /* ignore */
-      }
-      setStatus("redirecting");
-      clearCart();
-      router.push("/order-success");
+      reference = (await submitOrder(request, attemptKey(request))).reference;
     } catch (error) {
-      saveLastOrderError(
-        error instanceof OrderSubmissionError ? error.failure : { code: "unknown", message: null, orderRef: null },
-      );
-      inFlight.current = false;
-      setStatus("redirecting");
-      router.push("/order-error");
+      if (error instanceof OrderSubmissionError) reference = error.failure.orderRef;
     }
+
+    const whatsappUrl = buildWhatsAppOrderUrl({
+      reference,
+      fullName: request.customerName,
+      phone: values.phone.trim(),
+      address: request.customerAddress,
+      notes: request.customerNotes,
+      lines,
+      total: subtotal,
+    });
+    saveLastOrder({ reference, total: subtotal, currency: "TND", createdAt: new Date().toISOString(), whatsappUrl });
+    clearLastOrderError();
+    try {
+      sessionStorage.removeItem(DRAFT_KEY);
+      sessionStorage.removeItem(ATTEMPT_KEY);
+    } catch {
+      /* ignore */
+    }
+    setStatus("redirecting");
+    clearCart();
+    router.push("/order-success");
   };
 
   if (!ready) return null;
@@ -162,7 +171,7 @@ export function CheckoutView() {
           id="phone"
           label="Numéro de téléphone"
           error={errors.phone}
-          hint="Nous vous contacterons sur ce numéro pour confirmer la commande."
+          hint="Nous vous répondrons sur WhatsApp ou par téléphone pour confirmer la commande."
           input={
             <input
               id="phone"
@@ -177,6 +186,29 @@ export function CheckoutView() {
               onChange={(e) => update("phone", e.target.value)}
               aria-invalid={Boolean(errors.phone)}
               aria-describedby={errors.phone ? "phone-error" : "phone-hint"}
+              required
+              disabled={busy}
+            />
+          }
+        />
+
+        <Field
+          id="address"
+          label="Adresse de livraison"
+          error={errors.address}
+          input={
+            <input
+              id="address"
+              name="address"
+              className={styles.input}
+              type="text"
+              autoComplete="street-address"
+              placeholder="Ex. 12 rue de Marseille, Tunis"
+              maxLength={ADDRESS_MAX_LENGTH}
+              value={values.address}
+              onChange={(e) => update("address", e.target.value)}
+              aria-invalid={Boolean(errors.address)}
+              aria-describedby={errors.address ? "address-error" : undefined}
               required
               disabled={busy}
             />
@@ -209,13 +241,16 @@ export function CheckoutView() {
           {busy ? (
             <>
               <span className={styles.spinner} aria-hidden="true" />
-              Envoi en cours…
+              Préparation de votre commande…
             </>
           ) : (
-            "GET MY ORDER"
+            "Envoyer la commande"
           )}
         </button>
-        <p className={styles.reassure}>Aucun paiement en ligne n&apos;est demandé.</p>
+        <p className={styles.reassure}>
+          WhatsApp s&apos;ouvre avec votre commande pré-remplie : il suffit d&apos;appuyer sur Envoyer. Aucun paiement en
+          ligne n&apos;est demandé.
+        </p>
         <Link href="/cart" className="btn btn-ghost btn-sm">
           <ArrowLeftIcon size={16} />
           Retour au panier

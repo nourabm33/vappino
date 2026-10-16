@@ -1,6 +1,7 @@
-export const ORDER_STATUSES = ["pending", "notification_sent", "confirmed", "cancelled", "failed"] as const;
+export const ORDER_STATUSES = ["pending", "received", "notification_sent", "confirmed", "cancelled", "failed"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
-export type WhatsAppStatus = "pending" | "sent" | "failed";
+/** `click_to_chat`: no Cloud API message; the customer sends the order from WhatsApp via wa.me. */
+export type WhatsAppStatus = "pending" | "sent" | "failed" | "click_to_chat";
 
 export interface OrderItem {
   productId: string;
@@ -24,6 +25,7 @@ export interface OrderDocument {
   customerName: string;
   /** E.164, e.g. +21620123456 */
   customerPhone: string;
+  customerAddress: string;
   customerNotes: string;
   items: OrderItem[];
   total: number;
@@ -48,6 +50,7 @@ export interface OrderItemInput {
 export interface ValidOrderInput {
   customerName: string;
   customerPhone: string;
+  customerAddress: string;
   customerNotes: string;
   items: OrderItemInput[];
 }

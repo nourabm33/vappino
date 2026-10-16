@@ -10,6 +10,7 @@ import { normalizePhone } from "./validation";
 export interface OrderRequest {
   customerName: string;
   customerPhone: string;
+  customerAddress: string;
   customerNotes: string;
   items: StoredCartLine[];
 }
@@ -19,6 +20,16 @@ export interface ConfirmedOrder {
   total: number;
   currency: "TND";
   createdAt: string;
+}
+
+/** Last order placed in this tab, shown on /order-success with its WhatsApp link. */
+export interface PlacedOrder {
+  /** Backend reference, or null when the order could not be saved (WhatsApp still carries it). */
+  reference: string | null;
+  total: number;
+  currency: "TND";
+  createdAt: string;
+  whatsappUrl: string;
 }
 
 export interface OrderFailure {
@@ -31,6 +42,8 @@ export const LAST_ORDER_STORAGE_KEY = "vappino.lastOrder.v1";
 export const LAST_ORDER_ERROR_STORAGE_KEY = "vappino.lastOrderError.v1";
 
 const API_URL = process.env.NEXT_PUBLIC_ORDERS_API_URL || `${BASE_PATH}/api/orders`;
+/** The backend only records the order: past this delay the customer goes on to WhatsApp anyway. */
+const API_TIMEOUT_MS = 6000;
 
 export class OrderSubmissionError extends Error {
   constructor(readonly failure: OrderFailure) {
@@ -42,6 +55,7 @@ export function buildOrderRequest(values: CheckoutValues, items: StoredCartLine[
   return {
     customerName: values.fullName.trim(),
     customerPhone: normalizePhone(values.phone),
+    customerAddress: values.address.trim(),
     customerNotes: values.notes.trim(),
     items: items.map(({ productId, quantity }) => ({ productId, quantity })),
   };
@@ -56,14 +70,19 @@ export function createIdempotencyKey(): string {
 /** POSTs the order and resolves only when the backend confirms it was processed. */
 export async function submitOrder(request: OrderRequest, idempotencyKey: string): Promise<ConfirmedOrder> {
   let response: Response;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
     response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(request),
+      signal: controller.signal,
     });
   } catch {
     throw new OrderSubmissionError({ code: "network", message: null, orderRef: null });
+  } finally {
+    clearTimeout(timer);
   }
 
   let data: Record<string, unknown> | null = null;
@@ -101,12 +120,13 @@ function readSession<T>(key: string): T | null {
   }
 }
 
-export function saveLastOrder(order: ConfirmedOrder): void {
+export function saveLastOrder(order: PlacedOrder): void {
   writeSession(LAST_ORDER_STORAGE_KEY, order);
 }
 
-export function readLastOrder(): ConfirmedOrder | null {
-  return readSession<ConfirmedOrder>(LAST_ORDER_STORAGE_KEY);
+export function readLastOrder(): PlacedOrder | null {
+  const order = readSession<PlacedOrder>(LAST_ORDER_STORAGE_KEY);
+  return order && typeof order.whatsappUrl === "string" ? order : null;
 }
 
 export function saveLastOrderError(failure: OrderFailure): void {

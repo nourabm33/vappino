@@ -9,9 +9,12 @@ import { generateOrderRef } from "./orderRef";
 import { priceItems } from "./pricing";
 import type { OrderDocument, OrderItem, ValidOrderInput, WhatsAppErrorInfo } from "./types";
 
+type Notifier = (order: OrderDocument) => Promise<{ messageId: string }>;
+
 export interface OrderServiceDeps {
   getCollection(): Promise<Collection<OrderDocument>>;
-  notifyOwner(order: OrderDocument): Promise<{ messageId: string }>;
+  /** Cloud API notifier, or null when orders reach the shop through the customer's wa.me message. */
+  notifyOwner: Notifier | null;
   now(): Date;
 }
 
@@ -29,20 +32,22 @@ export function defaultOrderDeps(): OrderServiceDeps {
   return {
     getCollection: getOrdersCollection,
     now: () => new Date(),
-    async notifyOwner(order) {
-      const { config, missing } = readWhatsAppConfig();
-      if (!config) {
-        throw new WhatsAppError("config", `Missing environment variables: ${missing.join(", ")}`);
-      }
-      return sendWhatsAppMessage(
-        config,
-        config.ownerNumber,
-        config.templateName
-          ? { type: "template", params: buildTemplateParams(order) }
-          : { type: "text", body: buildOwnerMessage(order) },
-      );
-    },
+    notifyOwner: process.env.WHATSAPP_CLOUD_API_ENABLED === "true" ? cloudApiNotifier : null,
   };
+}
+
+async function cloudApiNotifier(order: OrderDocument): Promise<{ messageId: string }> {
+  const { config, missing } = readWhatsAppConfig();
+  if (!config) {
+    throw new WhatsAppError("config", `Missing environment variables: ${missing.join(", ")}`);
+  }
+  return sendWhatsAppMessage(
+    config,
+    config.ownerNumber,
+    config.templateName
+      ? { type: "template", params: buildTemplateParams(order) }
+      : { type: "text", body: buildOwnerMessage(order) },
+  );
 }
 
 export function orderFingerprint(phone: string, items: OrderItem[]): string {
@@ -62,11 +67,11 @@ function dbWriteError(error: unknown): ApiError {
   );
 }
 
-function successBody(order: Pick<OrderDocument, "orderRef" | "total" | "currency">, duplicate = false) {
+function successBody(order: Pick<OrderDocument, "orderRef" | "total" | "currency" | "status">, duplicate = false) {
   return {
     success: true,
     orderRef: order.orderRef,
-    status: "notification_sent",
+    status: order.status === "received" ? "received" : "notification_sent",
     total: order.total,
     currency: order.currency,
     ...(duplicate ? { duplicate: true } : {}),
@@ -102,12 +107,13 @@ export async function createOrder(
       orderRef: generateOrderRef(now),
       customerName: input.customerName,
       customerPhone: input.customerPhone,
+      customerAddress: input.customerAddress,
       customerNotes: input.customerNotes,
       items: priced.items,
       total: priced.total,
       currency: "TND",
-      status: "pending",
-      whatsappStatus: "pending",
+      status: deps.notifyOwner ? "pending" : "received",
+      whatsappStatus: deps.notifyOwner ? "pending" : "click_to_chat",
       whatsappMessageId: null,
       whatsappError: null,
       whatsappAttempts: 0,
@@ -130,7 +136,8 @@ export async function createOrder(
   }
   if (!order) throw dbWriteError(new Error("could not allocate a unique orderRef"));
 
-  return notify(orders, order, deps, 201);
+  if (!deps.notifyOwner) return { status: 201, body: successBody(order) };
+  return notify(orders, order, deps.notifyOwner, deps, 201);
 }
 
 async function handleExisting(
@@ -138,7 +145,7 @@ async function handleExisting(
   existing: WithId<OrderDocument>,
   deps: OrderServiceDeps,
 ): Promise<ServiceResult> {
-  if (existing.status === "notification_sent" || existing.status === "confirmed") {
+  if (existing.status === "notification_sent" || existing.status === "confirmed" || existing.status === "received") {
     return { status: 200, body: successBody(existing, true) };
   }
   if (existing.status === "cancelled") {
@@ -147,6 +154,9 @@ async function handleExisting(
       body: { success: false, error: "order_cancelled", orderRef: existing.orderRef, message: "Cette commande a été annulée." },
     };
   }
+
+  const notifier = deps.notifyOwner;
+  if (!notifier) return { status: 200, body: successBody({ ...existing, status: "received" }, true) };
 
   const now = deps.now();
   const stale = now.getTime() - existing.updatedAt.getTime() > STALE_PENDING_MS;
@@ -179,7 +189,7 @@ async function handleExisting(
       },
     };
   }
-  return notify(orders, claimed, deps, 200);
+  return notify(orders, claimed, notifier, deps, 200);
 }
 
 function toErrorInfo(error: unknown, at: Date): WhatsAppErrorInfo {
@@ -192,11 +202,12 @@ function toErrorInfo(error: unknown, at: Date): WhatsAppErrorInfo {
 async function notify(
   orders: Collection<OrderDocument>,
   order: OrderDocument,
+  notifyOwner: Notifier,
   deps: OrderServiceDeps,
   successStatus: number,
 ): Promise<ServiceResult> {
   try {
-    const { messageId } = await deps.notifyOwner(order);
+    const { messageId } = await notifyOwner(order);
     await orders
       .updateOne(
         { orderRef: order.orderRef },
