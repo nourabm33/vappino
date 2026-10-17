@@ -211,7 +211,7 @@ export function AdminApp({ staticHost, adminUrl }: { staticHost: boolean; adminU
             [
               ["orders", "Commandes"],
               ["daily", "Statistiques journalières"],
-              ["weekly", "Rapport hebdomadaire (semaine en cours)"],
+              ["weekly", "Rapport hebdomadaire"],
               ["profit", stats.profit === null ? "Rapport de revenu" : "Rapport de bénéfice"],
             ] as const
           ).map(([kind, label]) => (

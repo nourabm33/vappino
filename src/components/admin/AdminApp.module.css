@@ -184,6 +184,12 @@
   gap: var(--space-3);
 }
 
+.exportButtons :global(.btn) {
+  white-space: normal;
+  max-width: 100%;
+  text-align: center;
+}
+
 .grid {
   display: grid;
   gap: var(--space-5);
