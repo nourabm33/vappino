@@ -39,7 +39,7 @@ npm run build && npm start   # production build
 src/
   app/                 routes, layout, globals.css (design tokens), icons
   components/
-    layout/            Header, MobileMenu, Footer, AgeGate, Logo
+    layout/            Header, MobileMenu, Footer, Logo
     home/              home page sections
     product/           ProductCard, ProductGrid, ProductImage, CatalogView, ProductPurchase, SpecBadge
     cart/              CartProvider (context + localStorage), CartView, CartLineItem, OrderSummary
