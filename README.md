@@ -182,10 +182,24 @@ See `.env.example`. Server-side variables must **never** be prefixed with `NEXT_
 | `WHATSAPP_API_VERSION` | server | Graph API version (default `v21.0`) |
 | `WHATSAPP_TEMPLATE_NAME` / `_LANGUAGE` | server | Optional approved template (see below) |
 | `ADMIN_API_KEY` | server | Protects `/api/test-whatsapp` (long random string) |
+| `ADMIN_PASSWORD` | server | Admin dashboard password (12+ chars; `/admin` is disabled without it) |
+| `ADMIN_SESSION_SECRET` | server | Optional key for signing admin sessions (defaults to one derived from `ADMIN_PASSWORD`) |
+| `ADMIN_PRODUCT_COSTS` | server | Optional JSON `{"productId": unitCostTND}`; enables profit figures |
 | `ALLOWED_ORIGINS` | server | Extra origins allowed to call `/api/orders` (e.g. `https://nourabm33.github.io`) |
 | `NEXT_PUBLIC_ORDERS_API_URL` | client | Full orders URL when the API is on another host; empty = same app |
 | `NEXT_PUBLIC_SITE_URL` | client | Canonical site URL for metadata |
 | `NEXT_PUBLIC_CONTACT_PHONE` / `_EMAIL` / `_ADDRESS` | client | Footer contact info (hidden when empty) |
+
+## Admin dashboard (`/admin`)
+
+Runs on the Vercel app only (GitHub Pages is static, so `vappino.com/admin` just links to it).
+
+- **Login:** username `vappino.2027`, password from `ADMIN_PASSWORD`. Sessions are an HMAC-signed, `HttpOnly`, `SameSite=Strict`, `Secure` cookie valid 8 h; logins are rate-limited (5 per 15 min per IP, 30 per 15 min overall) and cross-site requests are rejected.
+- **Data shown:** date, reference, customer name, items, quantities, total and status. Phone numbers and addresses are not returned by the admin API. There are no customer accounts.
+- **Statistics:** orders per day, revenue, average order, items sold, best sellers, per-day and per-week totals (Tunis time). Cancelled orders are excluded from revenue. Profit is shown only when `ADMIN_PRODUCT_COSTS` has a cost for every product sold in the range; otherwise figures are labelled as revenue.
+- **Weekly reset:** the dashboard shows the current week (Monday 00:00 → Monday 00:00, Africa/Tunis). When a week ends, the next dashboard/report request writes an insert-only snapshot of that week's orders and statistics to the `weekly_reports` collection (`_id` = Monday date). Snapshots are never overwritten and **no order is deleted or modified**; the `orders` collection remains the full record and past weeks stay downloadable.
+- **PDF exports** (generated in the browser): orders, daily statistics, weekly report (current or any archived week) and profit report (revenue report when costs are not configured).
+- **API:** `POST /api/admin/login`, `POST /api/admin/logout`, `GET /api/admin/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD` (max 93 days), `GET /api/admin/reports?week=YYYY-MM-DD`.
 
 ## MongoDB setup
 
@@ -233,6 +247,7 @@ GitHub Pages (`.github/workflows/deploy-pages.yml`) can only host the static fro
 - Duplicate protection: checkout button locks during submission, an idempotency key per order attempt, unique DB index, and a 2-minute phone + items fingerprint.
 - Rate limiting is in-memory per server instance (10/10 min per IP on orders, 5/10 min on the test endpoint). On serverless hosts each instance has its own counter; use a shared store (e.g. Upstash Redis) if stronger limits are needed.
 - `/api/test-whatsapp` is disabled without `ADMIN_API_KEY` and compares keys in constant time.
+- Admin endpoints require the signed session cookie; credentials are compared in constant time and never logged.
 - Error responses never contain stack traces, tokens or connection strings.
 
 ## Known limitations
