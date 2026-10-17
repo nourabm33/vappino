@@ -234,7 +234,7 @@ export const PRODUCTS: readonly Product[] = [
     specification: "60K",
     price: 55,
     currency: "TND",
-    image: null,
+    image: `${IMG}/jnr-60k.webp`,
     description: "JNR 60K, spécification 60K.",
     category: "devices",
   },
