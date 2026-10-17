@@ -1,4 +1,4 @@
-import { MongoClient, type Collection } from "mongodb";
+import { MongoClient, type Collection, type Db } from "mongodb";
 import { ApiError } from "./errors";
 import type { OrderDocument } from "./orders/types";
 
@@ -24,7 +24,8 @@ export function safeDbMessage(error: unknown): string {
   return message.replace(/\/\/[^@/\s]+@/g, "//<credentials>@").slice(0, 300);
 }
 
-export async function getOrdersCollection(): Promise<Collection<OrderDocument>> {
+/** Shared database handle (same client as the orders API). Ensures the orders indexes once. */
+export async function getDatabase(): Promise<Db> {
   const uri = process.env.MONGODB_URI?.trim();
   if (!uri) {
     console.error("[db] MONGODB_URI is not set");
@@ -40,15 +41,19 @@ export async function getOrdersCollection(): Promise<Collection<OrderDocument>> 
   const state = globalForMongo.__vappinoMongo;
   try {
     const client = await state.client;
-    const orders = client.db(process.env.MONGODB_DB || "vappino").collection<OrderDocument>("orders");
-    state.indexes ??= ensureIndexes(orders);
+    const db = client.db(process.env.MONGODB_DB || "vappino");
+    state.indexes ??= ensureIndexes(db.collection<OrderDocument>("orders"));
     await state.indexes;
-    return orders;
+    return db;
   } catch (error) {
     if (globalForMongo.__vappinoMongo === state) globalForMongo.__vappinoMongo = undefined;
     console.error("[db] MongoDB unavailable:", safeDbMessage(error));
     throw databaseUnavailable();
   }
+}
+
+export async function getOrdersCollection(): Promise<Collection<OrderDocument>> {
+  return (await getDatabase()).collection<OrderDocument>("orders");
 }
 
 async function ensureIndexes(orders: Collection<OrderDocument>): Promise<void> {
